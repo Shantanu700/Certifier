@@ -7,6 +7,9 @@ urlpatterns = [
     path("login/", views.signin),
     path("logout/", views.signout),
     path("generate-certificate/", views.generate_certificate),
-    path("download_zip/", views.test),
+    path("download-zip/", views.test),
+    path("file-manager/", views.manage_file_folders),
+    path("file-manager/<str:task>/", views.manage_file_folders),
+    path("file-manager/<str:task>/<str:object_type>/", views.manage_file_folders),
     path("test2/", views.test2),
 ]
