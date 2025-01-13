@@ -12,4 +12,4 @@ urlpatterns = [
     path("file-manager/<str:task>/", views.manage_file_folders),
     path("file-manager/<str:task>/<str:object_type>/", views.manage_file_folders),
     path("test2/", views.test2),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

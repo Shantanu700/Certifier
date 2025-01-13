@@ -184,18 +184,19 @@ def generate_certificate(request):
                         I1 = ImageDraw.Draw(img)
                         I1.text(plot_coordinates, plotting_box[0], font=actual_font, anchor=anchor,  fill =color)
                 img.save(f'user_files/tmp_{request.user.id}/'+str(index_csv)+'_'+image.name)
+            img.save(f'user_files/user_{request.user.id}/'+str(index_csv)+'_'+image.name)
             csvfile.close()
             os.remove(f'user_files/tmp_{request.user.id}/'+csv_file.name)
             shutil.make_archive(f'user_files/user_{request.user.id}/'+image.name.split('.')[0], 'zip', os.path.join(default_storage.base_location, f'tmp_{request.user.id}/'))
             user_zip_file = Files()
             user_zip_file.file.name = f'user_{request.user.id}/'+image.name.split('.')[0]+'.zip'
+            user_zip_file.thumbnail.name = f'user_{request.user.id}/'+str(index_csv)+'_'+image.name
             user_zip_file.filename = image.name.split('.')[0]+'.zip'
-            print(user_zip_file.file.size)
             user_zip_file.file_size = zipsize(user_zip_file.file.size, system=alternative)
             user_zip_file.file_user = request.user
             user_zip_file.save()
             shutil.rmtree(os.path.join(default_storage.base_location,f'tmp_{request.user.id}'))
-            return JsonResponse({'status':'Zip file created successfully', 'route':'download-zip/', 'file_id':user_zip_file.id})
+            return JsonResponse({'status':'Zip file created successfully', 'route':'download-zip/', 'file_id':user_zip_file.id, 'preview':'media/'+f'user_{request.user.id}/'+str(index_csv)+'_'+image.name})
         return JsonResponse({"status":"Unautherized"},status=401)
     return JsonResponse({"status":"Invalid request method"},status=405)
 
@@ -206,24 +207,24 @@ def manage_file_folders(request, task=None, object_type=None):
             if not folder_id:
                 if task == 'star':
                     folders = Folders.objects.filter(is_deleted=0, folder_user=request.user, is_starred=True).annotate(items=Count('child_folder')).values('folder_name', 'created_datetime__date', 'id', 'items', 'is_starred')
-                    files = Files.objects.filter(is_deleted=0, file_user=request.user, is_starred=True).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred')
+                    files = Files.objects.filter(is_deleted=0, file_user=request.user, is_starred=True).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred', 'thumbnail')
                     return JsonResponse({'parent_folder':None, 'folders': list(folders), 'files': list(files), 'path':'starred'})
                 elif task == 'quick-access':
                     folders = Folders.objects.filter(is_deleted=0, folder_user=request.user, quickly_accessible=True).annotate(items=Count('child_folder')).values('folder_name', 'created_datetime__date', 'id', 'items', 'is_starred')
-                    files = Files.objects.filter(is_deleted=0, file_user=request.user, quickly_accessible=True).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred')
+                    files = Files.objects.filter(is_deleted=0, file_user=request.user, quickly_accessible=True).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred', 'thumbnail')
                     return JsonResponse({'parent_folder':None, 'folders': list(folders), 'files': list(files), 'path':'starred'})
                 elif task == 'trash':
                     folders = Folders.objects.filter(is_deleted=1, folder_user=request.user, is_permanently_deleted=False).annotate(items=Count('child_folder')).values('folder_name', 'created_datetime__date', 'id', 'items', 'is_starred')
-                    files = Files.objects.filter(is_deleted=1, file_user=request.user, is_permanently_deleted=False).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred')
+                    files = Files.objects.filter(is_deleted=1, file_user=request.user, is_permanently_deleted=False).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred', 'thumbnail')
                     return JsonResponse({'parent_folder':None, 'folders': list(folders), 'files': list(files), 'path':'starred'})
                 elif task == 'recents':
                     lookup_date = datetime.today() - timedelta(days=2)
                     folders = Folders.objects.filter(is_deleted=0, folder_user=request.user, created_datetime__date__gt=lookup_date).annotate(items=Count('child_folder')).values('folder_name', 'created_datetime__date', 'id', 'items', 'is_starred')
-                    files = Files.objects.filter(is_deleted=0, file_user=request.user, created_datetime__date__gt=lookup_date).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred')
+                    files = Files.objects.filter(is_deleted=0, file_user=request.user, created_datetime__date__gt=lookup_date).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred', 'thumbnail')
                     return JsonResponse({'parent_folder':None, 'folders': list(folders), 'files': list(files), 'path':'starred'})
                     
                 folders = Folders.objects.filter(is_deleted=0, folder_user=request.user, parent__isnull=True).annotate(items=Count('child_folder')).values('folder_name', 'created_datetime__date', 'id', 'items', 'is_starred')
-                files = Files.objects.filter(is_deleted=0, file_user=request.user, parent_folder__isnull=True).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred')
+                files = Files.objects.filter(is_deleted=0, file_user=request.user, parent_folder__isnull=True).values('filename', 'created_datetime__date', 'id', 'file_size', 'is_starred', 'thumbnail')
                 return JsonResponse({'parent_folder':None, 'folders': list(folders), 'files': list(files), 'path':'home/'})
             else:                    
                 if not folder_id.isnumeric():
@@ -232,7 +233,7 @@ def manage_file_folders(request, task=None, object_type=None):
                     return JsonResponse({'status':'Folder Not found'}, status=404)
                 current_folder = Folders.objects.get(id=folder_id)
                 folders = Folders.objects.filter(is_deleted=0, folder_user=request.user, parent_id=folder_id).annotate(items=Count('child_folder')).values('folder_name', 'created_datetime__date', 'id', 'items','is_starred')
-                files = Files.objects.filter(is_deleted=0, file_user=request.user, parent_folder_id=folder_id).values('filename', 'created_datetime__date', 'id', 'file_size','is_starred')
+                files = Files.objects.filter(is_deleted=0, file_user=request.user, parent_folder_id=folder_id).values('filename', 'created_datetime__date', 'id', 'file_size','is_starred', 'thumbnail')
                 return JsonResponse({'parent_folder':current_folder.parent_id, 'folders': list(folders), 'files': list(files), 'path': list(reversed(get_path(eval(folder_id), [{'id':eval(folder_id), 'name':current_folder.folder_name}]))), 'quick_access':current_folder.quickly_accessible})
         return JsonResponse({"status":"Unautherized"},status=401)
     if request.method == 'POST':

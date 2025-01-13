@@ -40,6 +40,7 @@ class Files(models.Model):
     filename = models.CharField(max_length=50, null=True)
     file_size = models.CharField(max_length=10, null=True)
     file = models.FileField(upload_to=user_directory_path)
+    thumbnail = models.ImageField(upload_to=user_directory_path, null=True)
     created_datetime = models.DateTimeField(auto_now_add=True, null=True)
     parent_folder = models.ForeignKey(Folders, on_delete=models.RESTRICT, null=True)
     file_user = models.ForeignKey(CustomUser, on_delete=models.RESTRICT)
