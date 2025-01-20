@@ -15,6 +15,11 @@ import magic
 from django.conf import settings
 import shutil
 import openpyxl
+import random
+import string
+
+
+
 
 
 def get_path(folder_id: int, path: list):
@@ -25,8 +30,37 @@ def get_path(folder_id: int, path: list):
         path.append({'id':folder.parent_id, 'name':folder.parent.folder_name})
         return get_path(folder.parent_id, path)
 
-# def generate_csv()
+def get_valid_filename(filename: str, user_id: int, rand_str=''):
+    if not os.path.exists(f'user_files/user_{user_id}/{filename}'):
+        return filename, rand_str
+    else:
+        length = 8
+        random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+        ext = filename.split('.')[-1]
+        return get_valid_filename(random_string+filename, user_id, random_string)
 
+def resize_image(box: tuple, img: Image):
+    img_height = img.height
+    img_width = img.width
+    box_height = box[3] - box[1]
+    box_width = box[2] - box[0]
+    if img_height/box_height > img_width/box_width:
+        new_image_height = box_height
+        new_image_width = int(img_width / (img_height/box_height))
+        new_image = img.resize((new_image_width, new_image_height))
+        plotting_point = (box_width-new_image_width)//2+box[0],box[1]
+        return new_image, plotting_point
+    elif img_height/box_height < img_width/box_width:
+        new_image_width = box_width
+        new_image_height = int(img_height / (img_width/box_width))
+        new_image = img.resize((new_image_width, new_image_height))
+        plotting_point = box[0],(box_height-new_image_height)//2+box[1]
+        return new_image, (box[0], box[1])
+    else:
+        new_image_width = box_width
+        new_image_height = box_height
+        new_image = img.resize((new_image_width, new_image_height))
+        return new_image, (box[0], box[1])
 
 def get_fitting_font(text: str, myfont: ImageFont, boxlen: float):    
     text_box = myfont.getbbox(text)
@@ -167,36 +201,54 @@ def generate_certificate(request):
             print(format)
             csv_dict_reader = csv.DictReader(csvfile)
             first_row = csv_dict_reader.fieldnames
-            keys = [data.get('key') for data in format]
+            keys = [data.get('key') for data in format if data.get('type')=='text']
+            print(keys)
             if None in keys or not set(keys).issubset(set(first_row)):
                 return JsonResponse({'status':'Invalid keys'}, status=400)
             for index_csv,row in enumerate(csv_dict_reader):
                 img = Image.open(image)
+                img = img.convert("RGBA")
+                image.name = image.name.split(".")[0]+'.png'
                 for key in format:
-                    key_data = row.get(key.get('key'))
-                    boxes = key.get('boxes')
-                    box_coordinates = [(box['x1'],box['y1'],box['x2'],box['y2']) for box in boxes]
-                    default_box_font = ImageFont.truetype(Fonts.objects.get(id=boxes[0].get('font')).font_file, boxes[0].get('y2') - boxes[0].get('y1'))
-                    plotting_box_data, actual_font = generate_plotting_data(key_data, box_coordinates, default_box_font)
-                    for index,plotting_box in enumerate(plotting_box_data):
-                        color = boxes[index].get('color')
-                        plot_coordinates, anchor = get_plotting_coordinates(plotting_box[1], boxes[index].get('align'))
-                        I1 = ImageDraw.Draw(img)
-                        I1.text(plot_coordinates, plotting_box[0], font=actual_font, anchor=anchor,  fill =color)
-                img.save(f'user_files/tmp_{request.user.id}/'+str(index_csv)+'_'+image.name)
-            img.save(f'user_files/user_{request.user.id}/'+str(index_csv)+'_'+image.name)
+                    if key.get('type') == 'text':                        
+                        key_data = row.get(key.get('key'))
+                        boxes = key.get('boxes')
+                        box_coordinates = [(box['x1'],box['y1'],box['x2'],box['y2']) for box in boxes]
+                        default_box_font = ImageFont.truetype(Fonts.objects.get(id=boxes[0].get('font')).font_file, boxes[0].get('y2') - boxes[0].get('y1'))
+                        plotting_box_data, actual_font = generate_plotting_data(key_data, box_coordinates, default_box_font)
+                        for index,plotting_box in enumerate(plotting_box_data):
+                            color = boxes[index].get('color')
+                            plot_coordinates, anchor = get_plotting_coordinates(plotting_box[1], boxes[index].get('align'))
+                            I1 = ImageDraw.Draw(img)
+                            I1.text(plot_coordinates, plotting_box[0], font=actual_font, anchor=anchor,  fill =color)
+                    elif key.get('type') == 'image':
+                        key_data = key.get('key')
+                        boxes = key.get('boxes')
+                        box_coordinates = [(box['x1'],box['y1'],box['x2'],box['y2']) for box in boxes]
+                        if len(box_coordinates) != 1:
+                            return JsonResponse({'status':f'invalid boxes for {key_data}'}, status=400)
+                        key_image = request.FILES.get(key_data)
+                        if not key_image:
+                            return JsonResponse({'status':f'{key_data} image not found'}, status=404)
+                        pil_key_img = Image.open(key_image)
+                        pil_key_img = pil_key_img.convert("RGBA")
+                        resized_image, point = resize_image(box_coordinates[0], pil_key_img)
+                        img.paste(resized_image, point, resized_image)
+                    img.save(f'user_files/tmp_{request.user.id}/'+str(index_csv)+'_'+image.name, format='png')
             csvfile.close()
             os.remove(f'user_files/tmp_{request.user.id}/'+csv_file.name)
-            shutil.make_archive(f'user_files/user_{request.user.id}/'+image.name.split('.')[0], 'zip', os.path.join(default_storage.base_location, f'tmp_{request.user.id}/'))
+            valid_filename, rand_string = get_valid_filename(image.name.split('.')[0]+'.zip', request.user.id)
+            img.save(f'user_files/user_{request.user.id}/'+rand_string+str(index_csv)+image.name)
+            shutil.make_archive(f'user_files/user_{request.user.id}/'+rand_string+image.name.split('.')[0], 'zip', os.path.join(default_storage.base_location, f'tmp_{request.user.id}/'))
             user_zip_file = Files()
-            user_zip_file.file.name = f'user_{request.user.id}/'+image.name.split('.')[0]+'.zip'
-            user_zip_file.thumbnail.name = f'user_{request.user.id}/'+str(index_csv)+'_'+image.name
+            user_zip_file.file.name = f'user_{request.user.id}/'+rand_string+image.name.split('.')[0]+'.zip'
+            user_zip_file.thumbnail.name = f'user_{request.user.id}/'+rand_string+str(index_csv)+image.name
             user_zip_file.filename = image.name.split('.')[0]+'.zip'
             user_zip_file.file_size = zipsize(user_zip_file.file.size, system=alternative)
             user_zip_file.file_user = request.user
             user_zip_file.save()
             shutil.rmtree(os.path.join(default_storage.base_location,f'tmp_{request.user.id}'))
-            return JsonResponse({'status':'Zip file created successfully', 'route':'download-zip/', 'file_id':user_zip_file.id, 'preview':'media/'+f'user_{request.user.id}/'+str(index_csv)+'_'+image.name})
+            return JsonResponse({'status':'Zip file created successfully', 'route':'download-zip/', 'file_id':user_zip_file.id, 'preview':'media/'+user_zip_file.thumbnail.name})
         return JsonResponse({"status":"Unautherized"},status=401)
     return JsonResponse({"status":"Invalid request method"},status=405)
 
